@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeHalo Opportunity Dashboard</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar for Ranked List -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>TradeHalo</h1>
+                <p>Location Opportunity Analysis</p>
+            </div>
+            <div class="table-container">
+                <div id="pareto-chart-container" style="padding: 10px; border-bottom: 1px solid var(--glass-border); height: 200px;">
+                    <canvas id="paretoChart"></canvas>
+                </div>
+                
+                <table id="ranked-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Store</th>
+                            <th>Opp. Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Rows will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </aside>
+        
+        <!-- Main Map Area -->
+        <main class="map-container">
+            <div class="map-controls">
+                <button class="layer-btn active" id="btn-standard">Standard</button>
+                <button class="layer-btn" id="btn-shap">SHAP Impacts</button>
+                <button class="layer-btn" id="btn-lisa">LISA Clusters</button>
+                
+                <div style="border-left: 1px solid rgba(255,255,255,0.2); margin: 0 10px;"></div>
+                
+                <label style="color: white; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                    <input type="checkbox" id="toggle-demand" checked> Demand Heatmap
+                </label>
+                <label style="color: white; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                    <input type="checkbox" id="toggle-comps" checked> Competitors
+                </label>
+                <label style="color: white; font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                    <input type="checkbox" id="toggle-stores" checked> Existing Stores
+                </label>
+            </div>
+            
+            <div id="map"></div>
+            
+            <!-- Details Overlay -->
+            <div id="details-panel" class="glass-panel hidden">
+                <div class="panel-header">
+                    <h2 id="detail-name">Select a Location</h2>
+                    <button id="close-panel" onclick="document.getElementById('details-panel').classList.add('hidden')">&times;</button>
+                </div>
+                
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="label">NOI Score</span>
+                        <span class="value highlight" id="detail-score">-</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="label">Demand Weight</span>
+                        <span class="value" id="detail-demand">-</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="label">Competitors (3km)</span>
+                        <span class="value" id="detail-comp">-</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="label">Cannibalization Risk</span>
+                        <span class="value" id="detail-overlap">-</span>
+                    </div>
+                </div>
+                
+                <!-- AI Insights Panel -->
+                <div id="ai-insights-panel" class="hidden" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--glass-border);">
+                    <h3 style="font-size: 14px; margin-bottom: 10px; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+                        ✨ AI Strategic Insight
+                    </h3>
+                    <div id="ai-loading" class="hidden" style="font-size: 12px; color: var(--text-muted);">
+                        Synthesizing spatial dynamics...
+                    </div>
+                    <div id="ai-content" style="font-size: 13px; line-height: 1.5;">
+                        <p><strong style="color: white;">Executive Summary:</strong> <span id="ai-exec"></span></p>
+                        <p><strong style="color: white;">Market Condition:</strong> <span id="ai-demand"></span></p>
+                        <p><strong style="color: white;">Cannibalization Risk:</strong> <span id="ai-risk"></span></p>
+                        <p><strong style="color: white;">Recommendation:</strong> <span id="ai-rec" style="font-weight: 600; color: #10b981;"></span></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
