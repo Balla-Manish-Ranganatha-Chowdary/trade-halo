@@ -100,11 +100,11 @@ You will receive a JSON payload containing the evaluation metrics for a proposed
 app.mount("/", StaticFiles(directory=DIRECTORY, html=True), name="static")
 
 if __name__ == "__main__":
-    url = "http://localhost:8001"
+    url = "http://localhost:8002"
     print(f"\nStarting FastAPI TradeHalo Dashboard at {url}")
     print("Press Ctrl+C to stop.\n")
     try:
         webbrowser.open(url)
     except Exception:
         pass
-    uvicorn.run("app:app", host="0.0.0.0", port=8001, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8002, log_level="info")

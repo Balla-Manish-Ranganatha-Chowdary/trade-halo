@@ -1,0 +1,291 @@
+Weighted demand in catchment
+Sum of demand point weights within 3km. The core numerator of opportunity. Uses Haversine distance from candidate lat/lng to each demand point. — Why it matters: Directly measures how many customers are reachable.
+D = ? weight_i for all i where haversine(cand, D_i) ? 3km
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                             Demand point count in catchment
+Raw count of distinct demand nodes inside 3km. Complements weighted sum — a zone with 20 small demand points is more spatially distributed than 1 large one. — Why it matters: Captures spatial spread, not just total weight.
+count(D_i | dist ? 3km)
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                                   Demand density (weight per km²)
+Weighted demand divided by catchment area. Penalizes sparse zones even if total weight is high — a dense cluster is easier to serve than diffuse demand. — Why it matters: Efficiency of serving the area matters as much as raw demand.
+density = D_weighted / ?·r²
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                                Demand centroid offset
+Distance from candidate location to the weighted centroid of all demand points in catchment. A candidate perfectly centered on demand is better than one at the edge. — Why it matters: Reveals if the store placement is optimal within the demand cloud.
+offset = haversine(cand, centroid(D_i·weight_i))
+Medium impact
+Source: demand_points
+Group: Demand signals                                                                                                                                Demand weight variance
+Variance of weights inside the catchment. High variance = one or two mega-demand nodes dominate; low variance = even spread. High variance is riskier. — Why it matters: Risk signal — uneven demand is fragile.
+var(weight_i | dist ? 3km)
+Medium impact
+Source: demand_points
+Group: Demand signals                                                                                                                        Nearest demand point distance
+Distance to the single closest demand point. If no demand point is within 500m, the location may be poorly positioned even if total catchment is okay. — Why it matters: Sanity check for proximity to actual customers.
+min(dist(cand, D_i))
+Low / contextual
+Source: demand_points
+Group: Demand signals                                                                                                                           Purchase frequency proxy
+If demand weight encodes transaction frequency (search pins, repeat visits), frequency-weighted demand is more valuable than population-count demand. — Why it matters: A customer buying weekly is 52x more valuable than one buying annually.
+freq_score = ? (weight_i × freq_i) / count
+High impact
+Source: demand_points + external
+Group: Demand signals                                                                                                                             Competitor count in 3km
+Number of competitor stores within the 3km catchment. The single most commonly used competition metric. Must be computed spatially — global count is meaningless. — Why it matters: Direct head-count of who you are fighting for the same customers.
+comp_count = count(C_j | haversine(cand, C_j) ? 3km)
+High impact
+Source: competitors
+Group: Competition signals                                                                                                                Competitor density (per km²)
+Count divided by catchment area. A zone with 5 competitors in 3km is very different from 5 in 1km. Density penalizes hyper-competitive micro-areas. — Why it matters: Normalizes for the actual competitive pressure per square km.
+comp_density = comp_count / ?·r²
+High impact
+Source: competitors
+Group: Competition signals                                                                                                                            Nearest competitor distance
+Distance to the single closest competitor. If a competitor is 200m away, they pre-empt the micro-catchment regardless of total count. — Why it matters: Proximity to nearest rival is the sharpest competitive threat signal.
+min_comp_dist = min(haversine(cand, C_j))
+High impact
+Source: competitors
+Group: Competition signals                                                                                                                           Competitor proximity decay score
+Distance-weighted sum of competitors. Nearby rivals hurt more than distant ones. Uses inverse-distance weighting so a 200m rival scores worse than a 2km one. — Why it matters: Captures that competition is not binary — it is proportional to proximity.
+comp_pressure = ? 1/dist(cand,C_j) for all j in 3km
+High impact
+Source: competitors
+Group: Competition signals                                                                                                                        Market saturation ratio
+Competitor count divided by weighted demand in catchment. A zone with 5 competitors but 10,000 demand weight is less saturated than 2 competitors on 500 weight. — Why it matters: Reveals if demand can absorb the competition.
+saturation = comp_count / D_weighted
+High impact
+Source: competitors + demand_points
+Group: Competition signals                                                                                                                   Estimated competitor serving capacity
+If competitor store sizes or categories are known, estimate how many customers they can serve. Net unmet demand = total demand minus competitor capacity. — Why it matters: The real opportunity is unmet demand, not total demand.
+unmet = D_weighted ? ? capacity_j for j in 3km
+High impact
+Source: competitors + external
+Group: Competition signals                                                                                                                           Competitor cluster pattern
+Are competitors clustered together or spread out? Clustering sometimes signals a proven high-demand zone (agglomeration) vs a spread indicating territorial coverage. — Why it matters: Clustered rivals = validated demand. Spread rivals = territorial game.
+cluster_score = std(dist between competitors in 3km)
+Medium impact
+Source: competitors
+Group: Competition signals                                                                                                                            Competitor brand tier
+Are competitors budget, mid-range, or premium? If TradeHalo is mid-range and the catchment has only budget rivals, there is a positioning gap. — Why it matters: Market positioning gap is an opportunity even with high competitor count.
+tier_gap = TradeHalo_tier ? avg(competitor_tier_j)
+Medium impact
+Source: competitors + external
+Group: Competition signals                                                                                                                     Competitor age / time in area
+How long have competitors been operating in this zone? Long-standing rivals have brand loyalty; newly opened ones are still building it. — Why it matters: Entrenched competitors are harder to displace.
+avg_age = mean(years_operating for j in 3km)
+Low / contextual
+Source: competitors + external
+Group: Competition signals                                                                                                                   Own store in 3km (hard filter)
+Binary flag: does any existing own store fall within 3km? This is the mandatory exclusion gate. No amount of demand justifies opening here if cannibalization is guaranteed. — Why it matters: Hard constraint — not a soft penalty.
+blocked = any(haversine(cand, S_i) ? 3km)
+High impact
+Source: stores
+Group: Cannibalization signals                                                                                                                Nearest own store distance
+Even beyond 3km, the distance to the nearest own store matters. A new store 3.1km from S1 will still pull shared customers. Greater distance = less cannibalization. — Why it matters: Cannibalization is continuous — it does not stop at 3.001km.
+nearest_own = min(haversine(cand, S_i))
+High impact
+Source: stores
+Group: Cannibalization signals                                                                                                                          Own store demand overlap
+Fraction of the candidate catchment demand that is already covered by an existing own store catchment. High overlap = high cannibalization even at 3.5km. — Why it matters: Spatial overlap of demand, not just distance between stores.
+overlap = |D_cand ? D_nearest_own| / |D_cand|
+High impact
+Source: stores + demand_points
+Group: Cannibalization signals                                                                                                                    Own store revenue at risk
+Estimate how much of the nearest own store's revenue the new location would cannibalize, based on shared demand points and Huff gravity split. — Why it matters: Revenue impact on network, not just distance.
+risk = ? P(customer?new) × revenue_customer for shared demand
+Medium impact
+Source: stores + demand_points
+Group: Cannibalization signals                                                                                                             Network total demand increase
+New demand the candidate location adds to the network that existing stores do not cover. This is the net new opportunity. — Why it matters: Only net new demand counts as true opportunity.
+net_new = D_cand ? overlap_demand
+High impact
+Source: stores + demand_points
+Group: Cannibalization signals                                                                                                                 Rent / commercial lease cost
+Monthly commercial rent per sq ft in the area. Indiranagar commands 3–5x the rent of Electronic City. Without this, high-demand zones appear better than they are. — Why it matters: The highest demand zone may have the worst margin.
+cost_adj_demand = D_weighted / rent_index
+High impact
+Source: external (proptech APIs)
+Group: Operating cost signals                                                                                                                      Property price index
+Residential and commercial property values proxy the cost and customer purchasing power simultaneously. Premium areas = high cost but high-value customers. — Why it matters: Dual signal — cost AND customer affluence.
+purchasing_power_index = property_price_local / city_avg
+Medium impact
+Source: external
+Group: Operating cost signals                                                                                                                  Labour cost index
+Average wage for retail staff in the area. Varies significantly across Bengaluru zones. — Why it matters: Staffing is typically 20–35% of operating cost.
+labour_cost = avg_wage_local / avg_wage_city
+Medium impact
+Source: external
+Group: Operating cost signals                                                                                                                    Utility and infrastructure cost
+Power reliability (outage frequency), water supply, internet connectivity. Poor infrastructure raises operating cost. — Why it matters: Operational reliability directly affects costs.
+infra_score = 1 ? outage_rate
+Low / contextual
+Source: external (BESCOM data)
+Group: Operating cost signals                                                                                                               Setup / fit-out cost estimate
+First-year capital cost including interiors, signage, licences. Varies by zone due to civic permit fees and contractor rates. — Why it matters: Break-even timeline is a store viability signal.
+payback_period = setup_cost / monthly_margin
+Medium impact
+Source: external
+Group: Operating cost signals                                                                                                                      Approved real estate projects
+Number and scale of residential projects with BBMP/RERA approval within 3km. Each 500-unit project adds ~1000–1500 residents = future demand. — Why it matters: A zone that looks medium today may be the top zone in 2 years.
+future_pop = ? units_approved_i × avg_household_size
+High impact
+Source: RERA portal, BBMP
+Group: Forward-looking signals                                                                                                                      Tech park / SEZ development plans
+Planned IT parks or SEZs under construction. Each 1M sqft of office space adds ~5000–8000 daily footfall to the micro-area. — Why it matters: Tech workers are high-frequency, high-value customers.
+footfall_gain = planned_sqft × occupancy_rate × employees_per_sqft
+High impact
+Source: KIADB, business press
+Group: Forward-looking signals                                                                                                                         Metro line proximity & upcoming stations
+Distance to existing or Phase 3 metro stations. Metro increases catchment effective radius — customers travel further to a metro-adjacent store. — Why it matters: A store at a future metro station doubles its catchment overnight at inauguration.
+effective_radius = base_radius × metro_multiplier
+High impact
+Source: BMRCL plans
+Group: Forward-looking signals                                                                                                                       Road widening / infrastructure projects
+BBMP-approved road widening projects that will change traffic flow and accessibility. A widened road increases throughput and visibility. — Why it matters: Accessibility directly drives footfall.
+access_score = road_width_future / road_width_current
+Medium impact
+Source: BBMP master plan
+Group: Forward-looking signals                                                                                                                       Zoning reclassification
+Areas being rezoned from residential to mixed-use or commercial. Signals an area transitioning to higher commercial density. — Why it matters: Commercial rezoning precedes demand surge.
+binary flag + timeline
+Medium impact
+Source: BDA master plan 2031
+Group: Forward-looking signals                                                                                                                Population growth rate
+Historical and projected population growth for the ward/pin-code. A 15% annual growth area compounding over 5 years changes opportunity dramatically. — Why it matters: Today's medium zone is tomorrow's top zone in high-growth areas.
+pop_2027 = pop_now × (1 + growth_rate)^3
+High impact
+Source: Census + city planning dept
+Group: Forward-looking signals                                                                                                                        New college/university campuses
+Planned or under-construction educational institutions. Students are high-frequency buyers of food, personal care, and accessories depending on product type. — Why it matters: Product-dependent — critical for youth-targeted categories.
+student_demand = enrolled × visit_frequency × avg_spend
+Medium impact
+Source: UGC / state education dept
+Group: Forward-looking signals                                                                                                                Hospital / healthcare hub development
+Nearby hospital clusters drive high footfall from patients, staff, and visitors — especially for pharmacy, food, and convenience product categories. — Why it matters: Hospitals generate consistent, daily demand regardless of season.
+hospital_footfall = beds × avg_daily_visitors
+Medium impact
+Source: NMC, state health dept
+Group: Forward-looking signals                                                                                                                 Target demographic density
+Fraction of the local population matching TradeHalo's ideal customer (age, income, lifestyle). Indiranagar has more 25–40 working professionals than Hebbal. — Why it matters: Serving 1000 on-target customers beats 5000 off-target ones.
+demo_match = target_pop_in_3km / total_pop_in_3km
+High impact
+Source: Census ward data
+Group: Customer profile signals                                                                                                           Income / affluence index
+Proxy from property values, car ownership rates, and ward income tax data. Premium product = high affluence required; budget product = opposite. — Why it matters: Purchase power determines basket size and frequency.
+affluence = (property_val + car_density) / 2, normalised
+High impact
+Source: MCD/ward property data
+Group: Customer profile signals                                                                                                             Working population ratio
+Share of residents who are salaried or self-employed. Higher working population = stable, recurring demand on weekdays, not just weekends. — Why it matters: Steady weekday demand is more reliable than weekend-only spikes.
+working_ratio = working_age_employed / total_pop
+High impact
+Source: NSSO, Census
+Group: Customer profile signals                                                                                                              Student population concentration
+Number of degree colleges and hostels within 2km. Relevant for categories with strong youth skew (food, electronics, personal care). — Why it matters: Students transact frequently but with smaller baskets.
+student_density = enrolled_nearby / total_pop
+Medium impact
+Source: AICTE, university data
+Group: Customer profile signals                                                                                                                Commuter vs resident ratio
+Zones near offices attract transient commuters (morning/evening peaks) while residential zones have spread demand. Ops model differs significantly. — Why it matters: Affects store hours, staffing pattern, and format size.
+commuter_ratio = office_sqft_in_2km / residential_units
+Medium impact
+Source: BBMP land use data
+Group: Customer profile signals                                                                                                                        Cultural/religious event footfall
+Proximity to temples, mosques, churches, or event grounds creates periodic demand spikes. Jayanagar near Lalbagh has huge Republic Day footfall. — Why it matters: Category-specific — relevant for food, gifts, festive products.
+event_footfall = avg_event_days × visitors_per_event
+Low / contextual
+Source: local knowledge + Google Maps
+Group: Customer profile signals                                                                                                                Tourist / transient visitor share
+Areas near airports, railway stations, or tourist attractions have a significant share of non-repeat customers. Works for convenience; bad for loyalty. — Why it matters: High for convenience formats, low for relationship-based retail.
+transit_score = distance_to_transit_hub (inverse)
+Low / contextual
+Source: MakeMyTrip/Airbnb density
+Group: Customer profile signals                                                                                                                  Road accessibility score
+Number and width of roads connecting to the location, number of entry/exit points. A location accessible only via one lane road limits footfall. — Why it matters: Inaccessible locations lose demand regardless of how close customers are.
+access = ? road_width_i × connectivity_i
+High impact
+Source: OSM / Google Maps API
+Group: Spatial & accessibility signals                                                                                                           Public transport connectivity
+Distance to nearest bus stop, auto stand, metro station. Customers without vehicles need transit to reach the store. — Why it matters: Transit access expands the effective catchment for non-car customers.
+transit_score = 1/min(dist_to_bus, dist_to_metro)
+High impact
+Source: BMTC route data
+Group: Spatial & accessibility signals                                                                                                        Parking availability
+On-street or dedicated parking within 200m. For car-driving customers (common in Whitefield/Electronic City), no parking = no visit. — Why it matters: Particularly critical in IT corridor zones.
+parking_score = parking_spots_200m / expected_car_customers
+Medium impact
+Source: BBMP parking survey
+Group: Spatial & accessibility signals                                                                                                                   Footfall thoroughfare score
+Whether the candidate is on a high-footfall street (main road, market street) vs a side lane. Visibility from thoroughfare = passive brand exposure. — Why it matters: Visibility is free marketing. Side-lane stores need active pull.
+throughfare_traffic = daily_pedestrian_count + vehicle_count
+High impact
+Source: Google Maps traffic layer
+Group: Spatial & accessibility signals                                                                                                          Visibility / signage potential
+Can the store facade be seen from >50m on approach roads? Corner plots score higher. Dead-end plots score near-zero. — Why it matters: Visible stores acquire walk-in customers; invisible stores rely purely on intent.
+visibility_score = road_frontage × max_signage_height
+Medium impact
+Source: site visit / satellite imagery
+Group: Spatial & accessibility signals                                                                                                     Locality boundary effect
+Is the candidate on the boundary between two distinct demand zones? Boundary stores can pull from both sides — doubling effective catchment. — Why it matters: The best locations are often at the junction of two demand zones.
+boundary_bonus = overlap(ward_A_demand, ward_B_demand)
+Medium impact
+Source: demand_points + ward maps
+Group: Spatial & accessibility signals                                                                                                           Elevation and flood risk
+Bengaluru has significant flood-prone zones (Bellandur, Varthur). A flooded store loses 15–30 operating days per year and has higher insurance costs. — Why it matters: Operational continuity risk — directly reduces realized revenue.
+flood_penalty = flood_days_per_year × daily_revenue_lost
+Low / contextual
+Source: BBMP flood zone maps
+Group: Spatial & accessibility signals                                                                                                        Net opportunity index
+The master engineered feature: demand captured minus competitor capacity minus cannibalization loss, adjusted for operating cost. — Why it matters: Single number that models the actual incremental profit opportunity.
+NOI = (D_weighted ? comp_capacity ? own_overlap) / cost_index
+High impact
+Source: all tables
+Group: Engineered interaction features                                                                                                         Demand-to-competition ratio
+Weighted demand divided by proximity-weighted competitor pressure. The purest signal of how much demand is left per unit of competition. — Why it matters: Directly answers: is there enough uncontested demand here?
+DCR = D_weighted / comp_pressure_score
+High impact
+Source: demand_points + competitors
+Group: Engineered interaction features                                                                                                      Huff capture probability
+Probability that a customer at each demand point chooses TradeHalo over all competitors, using gravity model. Aggregated across catchment. — Why it matters: Most theoretically rigorous demand capture estimate.
+P_capture = ?_i [weight_i × A^?/d_i^? / (A^?/d_i^? + ?_j A_j^?/d_ij^?)]
+High impact
+Source: all tables
+Group: Engineered interaction features                                                                                                   Future-adjusted demand score
+Current demand weighted by a 3-year growth multiplier based on approved projects and population growth. — Why it matters: Avoids opening stores in today's hot zones that are tomorrow's saturated ones.
+future_D = D_weighted × (1 + growth_rate)^3 + future_pop × penetration
+High impact
+Source: demand_points + external
+Group: Engineered interaction features                                                                                                        Competitive gap index
+For each competitor in catchment, estimate their capacity utilization. If all local competitors are at 90% capacity, there is clear unmet demand. — Why it matters: Saturated competitors are the best signal that more supply is needed.
+gap = D_weighted ? ? (capacity_j × utilization_j)
+High impact
+Source: competitors + external
+Group: Engineered interaction features                                                                                                   Store format fit score
+Match between the local demand profile (high-frequency small basket vs low-frequency large basket) and TradeHalo's store format. — Why it matters: Wrong format in the right area still fails.
+format_fit = corr(demand_profile, store_format_profile)
+Medium impact
+Source: demand_points + business logic
+Group: Engineered interaction features                                                                                                Own-network synergy score
+Does opening this location create a network effect — e.g. completing a geographic coverage ring, enabling faster delivery from a nearby dark store? — Why it matters: Chain stores gain value from network density, not just individual locations.
+synergy = network_coverage_gain / marginal_cost
+Medium impact
+Source: stores + maps
+Group: Engineered interaction features                                                                                               Seasonality-adjusted demand
+If demand data is from a specific season (e.g. Diwali search spikes), normalize by monthly demand patterns to get year-round steady-state demand. — Why it matters: Avoid opening stores for seasonal demand that collapses off-peak.
+seasonal_adj = D_weighted / seasonality_index_month
+Medium impact
+Source: demand_points + temporal data
+Group: Engineered interaction features                                                                                               Cannibalization-corrected opportunity
+Subtract not just own-store spatial overlap but also Huff-model probability that existing own stores already serve some of the catchment demand. — Why it matters: More precise than binary 3km exclusion — models partial cannibalization.
+corrected_opp = D_weighted × (1 ? ? P(existing_store_k captures demand_i))
+High impact
+Source: stores + demand_points
+Group: Engineered interaction features                                                                                                    Break-even demand threshold check
+Does the net captured demand exceed the minimum required to break even at local operating cost? A binary viability gate before ranking. — Why it matters: Filters out locations that score well on demand but cannot cover costs.
+viable = net_captured_demand × avg_spend > monthly_opex
+High impact
+Source: all tables + financials
+Group: Engineered interaction features                                                                                                              

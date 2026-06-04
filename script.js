@@ -17,6 +17,7 @@ let dynamicCatchmentLayers = L.featureGroup().addTo(map);
 let heatmapLayer = L.heatLayer([], {radius: 20, blur: 15, maxZoom: 13, gradient: {0.4: 'blue', 0.6: 'cyan', 0.8: 'yellow', 1.0: 'red'}}).addTo(map);
 let competitorsLayer = L.featureGroup().addTo(map);
 let existingStoresLayer = L.featureGroup().addTo(map);
+let whiteSpaceLayer = L.featureGroup().addTo(map);
 
 const RADIUS_METERS = 3000; // 3km default
 let currentMode = 'standard'; // standard, shap, lisa
@@ -41,11 +42,13 @@ const papaConfig = {
 // Load Data
 async function loadData() {
     try {
-        const [candReq, demandReq, compReq, storeReq] = await Promise.all([
-            fetch('data/ranked_stores.csv'),
-            fetch('data/demand_points.csv'),
-            fetch('data/competitors.csv'),
-            fetch('data/stores.csv')
+        const ts = Date.now();
+        const [candReq, demandReq, compReq, storeReq, wsReq] = await Promise.all([
+            fetch(`data/ranked_stores.csv?v=${ts}`),
+            fetch(`data/demand_points.csv?v=${ts}`),
+            fetch(`data/competitors.csv?v=${ts}`),
+            fetch(`data/stores.csv?v=${ts}`),
+            fetch(`data/white_space_clusters.csv?v=${ts}`)
         ]);
         
         // Candidates
@@ -63,7 +66,7 @@ async function loadData() {
         Papa.parse(await demandReq.text(), {
             ...papaConfig,
             complete: function(res) {
-                const heatData = res.data.filter(r => r.lat && r.lon).map(r => [r.lat, r.lon, Math.min(r.weight / 200, 1.0)]);
+                const heatData = res.data.filter(r => r.lat && r.lng).map(r => [r.lat, r.lng, Math.min(r.weight / 200, 1.0)]);
                 heatmapLayer.setLatLngs(heatData);
             }
         });
@@ -72,8 +75,8 @@ async function loadData() {
         Papa.parse(await compReq.text(), {
             ...papaConfig,
             complete: function(res) {
-                res.data.filter(r => r.lat && r.lon).forEach(r => {
-                    L.circleMarker([r.lat, r.lon], { radius: 4, color: '#f43f5e', fillColor: '#f43f5e', fillOpacity: 0.8, weight: 1 })
+                res.data.filter(r => r.lat && r.lng).forEach(r => {
+                    L.circleMarker([r.lat, r.lng], { radius: 4, color: '#f43f5e', fillColor: '#f43f5e', fillOpacity: 0.8, weight: 1 })
                      .bindTooltip(`Competitor (${r.tier})`)
                      .addTo(competitorsLayer);
                 });
@@ -84,11 +87,31 @@ async function loadData() {
         Papa.parse(await storeReq.text(), {
             ...papaConfig,
             complete: function(res) {
-                res.data.filter(r => r.lat && r.lon).forEach(r => {
-                    L.marker([r.lat, r.lon], { icon: createIcon('#10b981', '#047857', 18) })
+                res.data.filter(r => r.lat && r.lng).forEach(r => {
+                    L.marker([r.lat, r.lng], { icon: createIcon('#10b981', '#047857', 18) })
                      .bindTooltip("Existing TradeHalo Store")
                      .addTo(existingStoresLayer);
                 });
+            }
+        });
+        
+        // White Spaces
+        Papa.parse(await wsReq.text(), {
+            ...papaConfig,
+            complete: function(res) {
+                if(res.data) {
+                    res.data.filter(r => r.center_lat && r.center_lng).forEach(r => {
+                        L.circle([r.center_lat, r.center_lng], {
+                            color: '#eab308',
+                            fillColor: '#fef08a',
+                            fillOpacity: 0.3,
+                            radius: 1500, // 1.5km
+                            weight: 2,
+                            dashArray: '5, 5'
+                        }).bindTooltip(`<b>DBSCAN White-Space</b><br>Nodes: ${r.point_count}<br>Demand: ${r.total_weight.toFixed(0)}`)
+                        .addTo(whiteSpaceLayer);
+                    });
+                }
             }
         });
         
@@ -140,7 +163,7 @@ function plotStores() {
     const maxShap = Math.max(...rankedStores.map(s => s.shap_demand || 0.1));
     
     rankedStores.forEach((store, idx) => {
-        if (!store.lat || !store.lon) return;
+        if (!store.lat || !store.lng) return;
         
         let icon;
         if (currentMode === 'standard') {
@@ -168,7 +191,7 @@ function plotStores() {
             }
         }
         
-        const marker = L.marker([store.lat, store.lon], { icon: icon }).addTo(markersLayer);
+        const marker = L.marker([store.lat, store.lng], { icon: icon }).addTo(markersLayer);
         marker.on('click', () => focusStore(store));
     });
 }
@@ -242,7 +265,7 @@ function initParetoChart() {
 }
 
 function focusStore(store) {
-    const latlng = [store.lat, store.lon];
+    const latlng = [store.lat, store.lng];
     map.flyTo(latlng, 13, { duration: 0.5 });
     
     dynamicCatchmentLayers.clearLayers();
@@ -261,7 +284,7 @@ function focusStore(store) {
         const angle = Math.random() * Math.PI * 2;
         const sisterDistDeg = store.nearest_sister_dist / 111.32;
         const sisterLat = store.lat + (Math.sin(angle) * sisterDistDeg);
-        const sisterLon = store.lon + (Math.cos(angle) * sisterDistDeg);
+        const sisterLon = store.lng + (Math.cos(angle) * sisterDistDeg);
         
         L.circle([sisterLat, sisterLon], {
             color: '#10b981', // Existing store color
@@ -272,7 +295,7 @@ function focusStore(store) {
         }).addTo(dynamicCatchmentLayers);
         
         const midLat = (store.lat + sisterLat) / 2;
-        const midLon = (store.lon + sisterLon) / 2;
+        const midLon = (store.lng + sisterLon) / 2;
         L.marker([midLat, midLon], { icon: createIcon('#f43f5e', '#ef4444', 10) }).addTo(dynamicCatchmentLayers);
     }
     
@@ -357,6 +380,10 @@ document.getElementById('toggle-comps').addEventListener('change', (e) => {
 document.getElementById('toggle-stores').addEventListener('change', (e) => {
     if(e.target.checked) map.addLayer(existingStoresLayer);
     else map.removeLayer(existingStoresLayer);
+});
+document.getElementById('toggle-whitespace').addEventListener('change', (e) => {
+    if(e.target.checked) map.addLayer(whiteSpaceLayer);
+    else map.removeLayer(whiteSpaceLayer);
 });
 
 window.onload = loadData;

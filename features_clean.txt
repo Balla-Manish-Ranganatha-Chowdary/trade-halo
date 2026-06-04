@@ -1,0 +1,44 @@
+<USER_REQUEST>
+Weighted demand in catchment
+Sum of demand point weights within 3km. The core numerator of opportunity. Uses Haversine distance from candidate lat/lng to each demand point. — Why it matters: Directly measures how many customers are reachable.
+D = Σ weight_i for all i where haversine(cand, D_i) ≤ 3km
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                             Demand point count in catchment
+Raw count of distinct demand nodes inside 3km. Complements weighted sum — a zone with 20 small demand points is more spatially distributed than 1 large one. — Why it matters: Captures spatial spread, not just total weight.
+count(D_i | dist ≤ 3km)
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                                   Demand density (weight per km²)
+Weighted demand divided by catchment area. Penalizes sparse zones even if total weight is high — a dense cluster is easier to serve than diffuse demand. — Why it matters: Efficiency of serving the area matters as much as raw demand.
+density = D_weighted / π·r²
+High impact
+Source: demand_points
+Group: Demand signals                                                                                                                                Demand centroid offset
+Distance from candidate location to the weighted centroid of all demand points in catchment. A candidate perfectly centered on demand is better than one at the edge. — Why it matters: Reveals if the store placement is optimal within the demand cloud.
+offset = haversine(cand, centroid(D_i·weight_i))
+Medium impact
+Source: demand_points
+Group: Demand signals                                                                                                                                Demand weight variance
+Variance of weights inside the catchm
+<truncated 24789 bytes>
+ Engineered interaction features                                                                                               Seasonality-adjusted demand
+If demand data is from a specific season (e.g. Diwali search spikes), normalize by monthly demand patterns to get year-round steady-state demand. — Why it matters: Avoid opening stores for seasonal demand that collapses off-peak.
+seasonal_adj = D_weighted / seasonality_index_month
+Medium impact
+Source: demand_points + temporal data
+Group: Engineered interaction features                                                                                               Cannibalization-corrected opportunity
+Subtract not just own-store spatial overlap but also Huff-model probability that existing own stores already serve some of the catchment demand. — Why it matters: More precise than binary 3km exclusion — models partial cannibalization.
+corrected_opp = D_weighted × (1 − Σ P(existing_store_k captures demand_i))
+High impact
+Source: stores + demand_points
+Group: Engineered interaction features                                                                                                    Break-even demand threshold check
+Does the net captured demand exceed the minimum required to break even at local operating cost? A binary viability gate before ranking. — Why it matters: Filters out locations that score well on demand but cannot cover costs.
+viable = net_captured_demand × avg_spend > monthly_opex
+High impact
+Source: all tables + financials
+Group: Engineered interaction features                                                                                                              include all these features into csv files, the location is for bengaluru not mumbai, compute the new oppurtunity score including all of the features mentioned along with the previous available features and normalize the score in the range of 0-1
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-03T12:23:34+05:30.
+</ADDITIONAL_METADATA>
