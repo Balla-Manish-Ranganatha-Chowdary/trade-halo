@@ -30,7 +30,7 @@ def min_max_scale(series, invert=False):
 
 if __name__ == "__main__":
     print("Starting 58-Feature Analysis with cKDTree Optimization...")
-    data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    data_dir = os.path.join(os.path.dirname(__file__), '../data')
     
     demand_df = pd.read_csv(os.path.join(data_dir, 'demand_points.csv'))
     comp_df = pd.read_csv(os.path.join(data_dir, 'competitors.csv'))

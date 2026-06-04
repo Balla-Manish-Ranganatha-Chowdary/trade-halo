@@ -1,6 +1,6 @@
 # TradeHalo Spatial Intelligence Engine
 
-![Dashboard Screenshot Placeholder](<!-- Insert path/to/dashboard_screenshot.png here -->)
+![Dashboard Screenshot](dashboard.png)
 
 ## 1. The Opportunity-Score Model
 TradeHalo uses a **Hybrid Architecture** (Rule-Based + XGBoost Machine Learning) to score and rank potential store locations. 

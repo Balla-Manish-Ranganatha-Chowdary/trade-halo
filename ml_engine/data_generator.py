@@ -124,7 +124,7 @@ def generate_candidates(n=250):
     return df
 
 if __name__ == "__main__":
-    data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    data_dir = os.path.join(os.path.dirname(__file__), '../data')
     os.makedirs(data_dir, exist_ok=True)
     
     demand_df = generate_demand_points(10000)

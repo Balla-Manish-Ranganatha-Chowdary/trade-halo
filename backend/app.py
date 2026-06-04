@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -7,6 +7,10 @@ import uvicorn
 import json
 import time
 import webbrowser
+
+# Point to the new directories
+DIRECTORY = os.path.join(os.path.dirname(__file__), '../frontend')
+DATA_DIR = os.path.join(os.path.dirname(__file__), '../data')
 
 try:
     from google import genai
