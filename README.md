@@ -5,47 +5,66 @@
 ## 1. The Opportunity-Score Model
 TradeHalo uses a **Hybrid Architecture** (Rule-Based + XGBoost Machine Learning) to score and rank potential store locations. 
 
-The core philosophy of the engine is that retail success is a function of **Unmet Demand Capacity**. We evaluate 250 candidate locations across 58 variables split into 7 macro categories (Demand, Competition, Cannibalization, Forward-Looking, Customer Profile, Accessibility, and Cost). 
+The core philosophy of the engine is that retail success is a function of **Unmet Demand Capacity**. We evaluate 250 candidate locations across 58 variables split into 7 macro categories.
 
-Each metric is isolated, geographically filtered (using a parameterized 3km catchment), and normalized to a strict `[0, 1]` scale. Positive signals (like high demand or future transit development) push the score toward 1.0. Negative signals (like high competitor density or high operating costs) apply mathematical penalties.
+### Scoring Logic, Assumptions & Trade-Offs
+* **Macro-Weight Justification:** The weights (Demand 25%, Competition 20%, Cannibalization 20%, etc.) were **heuristically asserted** based on retail real estate domain knowledge, aggressively biasing immediate spatial realities over speculative future signals. In a live production environment, these weights are meant to be empirically calibrated by running a regression against the brand's actual historical store revenue.
+* **Normalization (Min-Max vs. Z-Score):** We chose Min-Max scaling to compress every metric strictly into a `[0, 1]` range. In a composite formula, unbounded variables (like Z-scores) can hijack the entire score. Min-Max ensures every metric stays strictly within its assigned weight bracket.
+* **Operating Cost as a Divisor Penalty:** Instead of subtracting high operating costs (Rent, Labor), we applied Cost as a mathematical divisor. A hyper-premium location (like a luxury mall) shouldn't score zero just because it is expensive; by dividing, we compress its ROI margin without destroying its high-revenue potential.
+* **Division-by-Zero Guardrails:** In edge cases (like DBSCAN White-Spaces) where demand or competition might equal exactly zero, the pipeline strictly enforces a `np.clip(denominator, 1, None)` ceiling constraint across all Python calculations to mathematically prevent zero-division `NaN` crashes in the Huff-style probability denominator.
 
-### Scoring Logic & Task 3 Trade-Offs
-To build the Opportunity Score, we had to mathematically fuse radically different signals (e.g., foot traffic vs. rent prices). Here are the key analytical trade-offs made during Task 3:
+## 2. The XGBoost Machine Learning Layer
+While the Rule-Based engine relies on deterministic spatial decay logic (Huff Gravity) to calculate theoretical market share, retail economics are rarely linear. To capture nonlinear interactions, we introduced an `xgboost.XGBRegressor`.
 
-* **Normalization Choice (Min-Max vs. Z-Score):** We chose Min-Max scaling to compress every metric strictly into a `[0, 1]` range. While Z-scores (standard deviations) handle outliers better, they can produce unbounded negative/positive values. In a composite formula, a single unbounded metric could entirely hijack the final score. Min-Max ensures every metric stays strictly within its assigned weight bracket.
-* **Operating Cost as a Divisor Penalty:** Instead of subtracting high operating costs (Rent, Labor) from the score, we applied Cost as a mathematical divisor. *Trade-off:* If you subtract costs, a hyper-premium location (like a luxury mall) might score near zero. By dividing, we treat costs as an ROI compressor—the location remains highly lucrative, but the margin of error for success is compressed.
-* **Weighting Justifications:** The macro-weights were aggressively biased toward immediate spatial fundamentals: **Demand (25%), Competition (20%), and Cannibalization (20%)** account for 65% of the total score. *Trade-off:* We deliberately deprioritized Forward-Looking signals (15%) and Customer Profiling (10%). Why? Because speculative future population growth or vague demographic matches cannot mathematically save a store if it is immediately suffocated by 11 competitors on opening day. 
+* **The Synthetic Data Assumption:** To overcome the "cold start" problem, we synthesized 2,000 historical training records. *Limitation:* Synthetic distributions inherently carry the biases programmed into the generator script. In a live deployment, this synthetic layer must be entirely swapped out and the model retrained exclusively on the brand's real POS (Point of Sale) historical data.
+* **The Features & Target:** The ML model analyzes 7 critical nonlinear variables (Rent, Demand, Proximity, etc.) to predict a **Historical Revenue Coefficient**—guessing if a location historically overperformed or underperformed the raw theoretical math.
+* **Divergence Guardrails (The 80/20 Blend):** The final Opportunity Score blends the Rule-Based output (80%) and the ML output (20%). If the XGBoost model strongly disagrees with the mathematical rules, what happens? Because both outputs are strictly `min_max_scaled` to a `[0, 1]` floor/ceiling *prior* to blending, the ML model can only mathematically swing the final score by a maximum of 20% in either direction. It acts safely as an **"Intuition Modifier"** without completely overwriting auditable geographic logic.
 
-### The XGBoost Machine Learning Layer
-While the Rule-Based engine relies on deterministic math (Huff Gravity logic) to calculate theoretical market share, retail economics are rarely perfectly linear. To capture nonlinear interactions, we introduced an `xgboost.XGBRegressor` machine learning model.
+## 3. High-Performance Spatial Architecture
+Calculating $O(N \times M)$ distances between millions of demand points and thousands of stores will instantly crash a standard Python loop (RAM exhaustion). We solved this scaling problem across two layers:
 
-* **What We Did:** We synthesized a historical dataset simulating 2,000 previous retail locations and their known historical outcomes. We then trained the XGBoost algorithm on this dataset so it could learn the hidden relationships between geography and profit.
-* **The Training Features:** The ML model specifically analyzes the 7 most critical nonlinear variables for each candidate:
-    1. `d_wt` (Raw Demand Weight)
-    2. `c_pressure` (Competitor Proximity/Pressure)
-    3. `net_new` (Net New Demand after cannibalization)
-    4. `rent_adj` (Rent Adjusted Demand)
-    5. `future_pop` (Future Population Growth)
-    6. `demo_match` (Demographic Target Match)
-    7. `access` (Street Connectivity/Visibility)
-* **What Exactly is it Predicting?** The target variable (`y`) the tree predicts is a localized **Historical Revenue Coefficient**. It tries to predict if a location with these exact traits historically overperformed or underperformed the raw theoretical math.
-* **How It Predicts the Opportunity Score:** The model parses the 7 features down its decision trees. If it notices a pattern—like "High rent + High future pop = Good" but "High rent + Low future pop + Medium competition = Catastrophic failure"—it outputs a raw prediction value. We normalize this value back onto a `[0, 1]` scale to create the `ml_attractiveness_score`.
+* **Python Engine (cKDTree):** We converted spherical Lat/Lng coordinates into 3D Cartesian space ($X, Y, Z$) and built a `scipy.spatial.cKDTree`, reducing spatial catchment queries from $O(N^2)$ to **$O(\log N)$**.
+* **MySQL 8.0 Deployment:** We designed a production DDL (`database/schema.sql`) enforcing `POINT SRID 4326` geographic data types and native `SPATIAL INDEX` extensions. This pushes the heavy `ST_Distance_Sphere` intersection math down into the database R-Tree.
 
-### Why the 80% / 20% Blending Weight?
-The final Opportunity Score is calculated as: `(Rule-Based Final * 0.8) + (ML Score * 0.2)`. 
+### Database Schema (ERD)
+The database uses a strict multi-tenant architecture, utilizing `BINARY(16)` UUIDs to minimize index size.
 
-We purposefully weighted the Rule-Based (Huff Gravity) model at 80% because it relies on strict, auditable, and immutable physics (geospatial decay, capacity, hard costs). Executives generally distrust "black-box" AI algorithms when allocating millions of dollars for real estate. By keeping the ML weight at a strict 20%, the AI acts as an **"Intuition Modifier"**. It nudges a location up or down based on hidden data patterns without completely overwriting the fundamental, undeniable physics of the 80% Huff Gravity engine.
+```mermaid
+erDiagram
+    TENANTS ||--o{ STORES : owns
+    TENANTS ||--o{ COMPETITORS : identifies
+    STORES ||--o{ STORE_CATCHMENTS : caches
 
-## 2. Trade-Offs & Assumptions
-* **Assumption (Circular Catchment):** We assume a perfect 3km circular catchment using the Haversine formula (and later `cKDTree` in 3D Cartesian space). In reality, rivers, highways, and travel-time (isochrones) warp catchments. A trade-off was made for extreme $O(\log N)$ computational speed over routing-engine accuracy.
-* **Assumption (Cannibalization):** We assume an exponential decay model for self-cannibalization. If a candidate is directly on top of an existing store, cannibalization is 100%. At 6km (2x radius), it decays to 0%.
-* **Trade-Off (Memory vs Speed):** During the Stretch Goals, we discarded the NumPy vectorized distance matrices (which are memory-heavy and crash at 1M points) in favor of building a `scipy.spatial.cKDTree`. While the tree takes a few milliseconds to build upfront, it allows for infinite scalability.
+    TENANTS {
+        binary(16) tenant_id PK
+        varchar brand_name
+    }
+    
+    STORES {
+        binary(16) store_id PK
+        binary(16) tenant_id FK
+        point location "SPATIAL INDEX"
+        float compound_opportunity_score
+    }
+    
+    COMPETITORS {
+        binary(16) competitor_id PK
+        binary(16) tenant_id FK
+        point location "SPATIAL INDEX"
+    }
 
-## 3. The Dashboard & Visualizations
-The frontend is built using Leaflet.js and Chart.js, designed to answer the core executive question: *"Why did the model pick this location?"*
+    STORE_CATCHMENTS {
+        binary(16) catchment_id PK
+        binary(16) store_id FK
+        polygon catchment_polygon "SPATIAL INDEX"
+        float cannibalization_risk_demand
+    }
+```
 
-* **Demand Heatmap:** Shows the raw distribution of customer weight. We visualize this so executives can verify that the AI isn't recommending stores in "dead zones."
-* **Competitor & Existing Store Pins:** Displays the exact location of rivals and our own fleet. This is critical to visually validate the cannibalization and saturation scores shown in the sidebar.
-* **SHAP Impacts Layer:** We extracted exact `pred_contribs` (SHAP values) from the XGBoost decision trees. The map pins change color and size based on *how much* demand/competition mathematically warped the prediction, turning a "black box" AI into an explainable model.
-* **Pareto Optimality Chart:** A scatter plot comparing *Demand Reached* (Y-Axis) vs *Cannibalization Risk* (X-Axis). The glowing green dotted line connects the "Pareto Optimal" stores—meaning you cannot find a store with higher demand without accepting exponentially more cannibalization risk.
-* **DBSCAN White-Space Polygons:** Large glowing yellow circles generated by our clustering algorithm. This visualization explicitly highlights massive pockets of demand that are >3km away from *any* existing store, instantly revealing uncontested market territory.
+## 4. The Dashboard & Visualizations
+The frontend (`frontend/script.js`) is built using Leaflet.js and Chart.js, designed to answer the core executive question: *"Why did the model pick this location?"*
+
+* **Demand Heatmap:** Shows the raw distribution of customer weight.
+* **Competitor & Existing Store Pins:** Displays exact locations of rivals to visually validate cannibalization.
+* **SHAP Impacts Layer:** We extracted exact `pred_contribs` (SHAP values) from the XGBoost trees. The map pins change color/size based on *how much* demand/competition warped the AI prediction, turning the black box into an explainable model.
+* **DBSCAN White-Space Polygons:** Glowing yellow clusters highlighting massive demand pockets >3km away from *any* existing store.
